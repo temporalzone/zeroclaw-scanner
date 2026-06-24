@@ -18,7 +18,7 @@ from .models import Finding
 logger = logging.getLogger(__name__)
 
 # Maximum seconds to wait for the Rust agent per finding
-_AGENT_TIMEOUT_SECONDS = 15
+_AGENT_TIMEOUT_SECONDS = 60
 
 # Maximum bytes of source code context to send (prevents massive prompts)
 _MAX_CONTEXT_BYTES = 50_000  # ~50 KB
