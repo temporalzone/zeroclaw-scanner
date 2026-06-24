@@ -701,7 +701,19 @@ def run_scan_backend(target_path_str: str, stream_name: str, enable_enrich: bool
         
     # 2. Run ZeroClaw AI Agent Enrichment if selected
     if enable_enrich:
-        enrichable = [f for f in findings if f.severity.value in ("critical", "high", "medium")]
+        # Skip dependency findings to prevent massive loads and API rate limits (as they are simple and repetitive)
+        enrichable = [
+            f for f in findings 
+            if f.severity.value in ("critical", "high", "medium")
+            and f.category.value != "dependency"
+        ]
+        
+        # Populate static helpful explanation for dependency findings
+        for f in findings:
+            if f.category.value == "dependency":
+                f.reasoning_chain = "Dependency package pinning does not require active AI agent analysis. Refer to the detailed remediation instructions below for version locking examples."
+                f.fixed_code = None
+                
         if enrichable:
             st.text(f"Enriching {len(enrichable)} findings with ZeroClaw Rust Agent...")
             client = ZeroClawClient()
