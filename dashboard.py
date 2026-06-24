@@ -785,6 +785,28 @@ with st.sidebar:
         st.toast("Database reloaded successfully!", icon="✅")
         st.rerun()
 
+    st.markdown('<div class="section-header">Agent Diagnostics</div>', unsafe_allow_html=True)
+    from zeroclaw.agent_client import _find_zeroclaw_binary
+    bin_p = _find_zeroclaw_binary()
+    if bin_p:
+        st.markdown("<span style='color:#34D399;font-size:12px;'>✅ Agent Binary: Found</span>", unsafe_allow_html=True)
+    else:
+        st.markdown("<span style='color:#F87171;font-size:12px;'>❌ Agent Binary: Not Found</span>", unsafe_allow_html=True)
+        
+    api_key_ok = False
+    try:
+        if "OPENROUTER_API_KEY" in st.secrets and st.secrets["OPENROUTER_API_KEY"]:
+            api_key_ok = True
+    except Exception:
+        pass
+    if not api_key_ok:
+        api_key_ok = bool(os.environ.get("OPENROUTER_API_KEY"))
+        
+    if api_key_ok:
+        st.markdown("<span style='color:#34D399;font-size:12px;'>✅ API Key: Configured</span>", unsafe_allow_html=True)
+    else:
+        st.markdown("<span style='color:#FBBF24;font-size:12px;'>⚠️ API Key: Missing (Set in Streamlit secrets)</span>", unsafe_allow_html=True)
+
     st.markdown("""
     <div style="font-size:11px;color:#334155;margin-top:12px;">
         <div style="margin-bottom:6px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:0.08em;">Team</div>
