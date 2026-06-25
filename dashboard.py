@@ -60,7 +60,7 @@ try:
 model = "google/gemma-2-9b-it:free"
 temperature = 0.2
 api_key = "{api_key}"
-max_tokens = 1024
+max_tokens = 4096
 fallback_models = []
 native_tools = false
 

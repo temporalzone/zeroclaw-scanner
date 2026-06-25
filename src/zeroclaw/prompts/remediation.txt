@@ -16,6 +16,7 @@ You are analyzing a vulnerability flagged by our static analysis scanners.
 - Do NOT introduce new dependencies unless absolutely required.
 - If the vulnerability cannot be fixed with a code change alone (e.g., it requires infrastructure changes), explain this in the reasoning_chain and set fixed_code to an empty string.
 - Ensure your fix aligns with secure coding best practices (parameterized queries, input validation, least privilege, etc.).
+- Keep the reasoning_chain explanation highly concise and focused (strictly under 200 words) so that it fits within API response constraints.
 
 ## Response Format
 
