@@ -16,31 +16,37 @@ DANGEROUS_PATTERNS = [
         r"\.execute\s*\(\s*f['\"]",
         "Possible SQL injection (f-string in execute)",
         Severity.HIGH,
+        "Use parameterized queries instead of f-string formatting.",
     ),
     (
         r"\.execute\s*\(\s*['\"][^'\"]*\+",
         "Possible SQL injection (string concat in execute)",
         Severity.HIGH,
+        "Use parameterized queries instead of string concatenation.",
     ),
     (
         r"dangerouslySetInnerHTML",
         "XSS risk: dangerouslySetInnerHTML",
         Severity.HIGH,
+        "Avoid using dangerouslySetInnerHTML, or sanitize input using DOMPurify.",
     ),
     (
         r"\.innerHTML\s*=(?!\s*\"\")",
         "XSS risk: innerHTML assignment",
         Severity.HIGH,
+        "Use textContent or innerText instead of innerHTML assignment.",
     ),
     (
         r"document\.write\s*\(",
         "XSS risk: document.write",
         Severity.MEDIUM,
+        "Use safe DOM APIs like appendChild or textContent instead of document.write.",
     ),
     (
         r"subprocess\.(call|run|Popen)\s*\([\s\S]*?shell\s*=\s*True",
         "Command injection: shell=True",
         Severity.HIGH,
+        "Avoid shell=True in subprocess calls. Pass arguments as a list instead of a string.",
     ),
 ]
 
@@ -58,7 +64,7 @@ MAX_FINDINGS = 1000             # hard cap on findings list size
 SCAN_TIMEOUT_SECONDS = 300      # 5-minute wall-clock timeout
 
 
-def _find_all_dangerous_patterns(text: str) -> list[tuple[str, Severity, str]]:
+def _find_all_dangerous_patterns(text: str) -> list[tuple[str, Severity, str, str]]:
     """Return every dangerous pattern found in *text*.
 
     Evaluates ALL patterns (not just the first match) so that a
@@ -66,10 +72,10 @@ def _find_all_dangerous_patterns(text: str) -> list[tuple[str, Severity, str]]:
     context.  Uses re.finditer to capture multiple instances of the same
     pattern within the sliding window, and re.DOTALL to match across newlines.
     """
-    matches: list[tuple[str, Severity, str]] = []
-    for pattern, message, severity in DANGEROUS_PATTERNS:
+    matches: list[tuple[str, Severity, str, str]] = []
+    for pattern, message, severity, remediation in DANGEROUS_PATTERNS:
         for match in re.finditer(pattern, text, re.DOTALL):
-            matches.append((message, severity, match.group(0)))
+            matches.append((message, severity, match.group(0), remediation))
     return matches
 
 
@@ -213,7 +219,7 @@ def scan_patterns(target_dir: Path) -> list[Finding]:
                     # Evaluate ALL patterns on the current context so
                     # that a low-severity match cannot mask a critical
                     # one in the same window.
-                    for message, severity, matched_string in _find_all_dangerous_patterns(context):
+                    for message, severity, matched_string, remediation in _find_all_dangerous_patterns(context):
                         # Signature-based dedup: distinguish unique occurrences
                         # by hashing the combination of file, message, string, and line number.
                         sig = hash((str(file_path), message, matched_string, line_number))
@@ -235,7 +241,7 @@ def scan_patterns(target_dir: Path) -> list[Finding]:
                                 ),
                                 file_path=str(file_path),
                                 line_number=line_number,
-                                remediation="Use parameterized queries or safe DOM APIs.",
+                                remediation=remediation,
                             )
                         )
                         reported_signatures.add(sig)
