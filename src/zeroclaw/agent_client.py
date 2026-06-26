@@ -215,10 +215,17 @@ class ZeroClawClient:
 
         except subprocess.CalledProcessError as e:
             stderr_snippet = (e.stderr or "")[:2000]
-            finding.reasoning_chain = (
-                f"ZeroClaw agent returned non-zero exit code ({e.returncode}). "
-                f"stderr: {stderr_snippet or 'N/A'}"
-            )
+            if "rate limit exceeded" in stderr_snippet.lower() or "429" in stderr_snippet:
+                finding.reasoning_chain = (
+                    "⚠️ OpenRouter API rate limit exceeded. "
+                    "The daily free tier quota has been reached. "
+                    "Please configure a paid API key or wait for the limit to reset."
+                )
+            else:
+                finding.reasoning_chain = (
+                    f"ZeroClaw agent returned non-zero exit code ({e.returncode}). "
+                    f"stderr: {stderr_snippet or 'N/A'}"
+                )
             logger.warning("ZeroClaw agent error for %s: %s", finding.id, e)
             if raise_on_error:
                 raise e
