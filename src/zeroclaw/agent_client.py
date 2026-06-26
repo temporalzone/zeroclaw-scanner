@@ -117,12 +117,13 @@ class ZeroClawClient:
         """Check if the ZeroClaw binary was found during init."""
         return self._binary is not None
 
-    def enrich_finding(self, finding: Finding, file_path: Path) -> Finding:
+    def enrich_finding(self, finding: Finding, file_path: Path, raise_on_error: bool = False) -> Finding:
         """Send a raw finding to the ZeroClaw Rust Agent for remediation.
 
         Args:
             finding: The raw scanner finding to enrich.
             file_path: Absolute path to the file containing the vulnerability.
+            raise_on_error: If True, propagates exceptions rather than swallowing them.
 
         Returns:
             The same finding, enriched with reasoning_chain and fixed_code
@@ -134,6 +135,8 @@ class ZeroClawClient:
                 "Install it: curl -fsSL https://raw.githubusercontent.com/zeroclaw-labs/zeroclaw/master/install.sh | bash  "
                 "Then ensure ~/.cargo/bin is in your PATH."
             )
+            if raise_on_error:
+                raise RuntimeError("ZeroClaw agent binary not found.")
             return finding
 
         # 1. Extract code context (bounded to prevent huge prompts)
@@ -191,28 +194,34 @@ class ZeroClawClient:
                     finding.id,
                 )
 
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             # ZeroClaw binary disappeared between init and call
             finding.reasoning_chain = (
                 "ZeroClaw agent binary not found at runtime. "
                 "Ensure the binary is installed and accessible."
             )
             logger.warning("ZeroClaw binary not found — skipping enrichment for %s", finding.id)
+            if raise_on_error:
+                raise e
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             finding.reasoning_chain = (
                 f"ZeroClaw agent timed out after {_AGENT_TIMEOUT_SECONDS}s. "
                 "Raw scanner output only."
             )
             logger.warning("ZeroClaw agent timed out for finding %s", finding.id)
+            if raise_on_error:
+                raise e
 
         except subprocess.CalledProcessError as e:
-            stderr_snippet = (e.stderr or "")[:300]
+            stderr_snippet = (e.stderr or "")[:2000]
             finding.reasoning_chain = (
                 f"ZeroClaw agent returned non-zero exit code ({e.returncode}). "
                 f"stderr: {stderr_snippet or 'N/A'}"
             )
             logger.warning("ZeroClaw agent error for %s: %s", finding.id, e)
+            if raise_on_error:
+                raise e
 
         except Exception as e:
             # Catch-all: never crash the pipeline
@@ -220,6 +229,8 @@ class ZeroClawClient:
                 f"ZeroClaw agent unavailable. Raw scanner output only. Error: {e}"
             )
             logger.warning("Unexpected error enriching %s: %s", finding.id, e)
+            if raise_on_error:
+                raise e
 
         return finding
 

@@ -712,34 +712,24 @@ def run_scan_backend(target_path_str: str, stream_name: str, enable_enrich: bool
             import time
             consecutive_failures = 0
             for i, finding in enumerate(enrichable, 1):
-                if consecutive_failures >= 2:
+                if consecutive_failures >= 5:
                     finding.reasoning_chain = (
                         "ZeroClaw agent skipped due to consecutive API/timeout errors."
                     )
                     continue
                 
-                # Sleep briefly to avoid tight rate-limiting
+                # Sleep briefly to avoid tight rate-limiting, and longer if we recently failed
                 if i > 1:
-                    time.sleep(1.5)
+                    sleep_time = 5.0 if consecutive_failures > 0 else 1.5
+                    time.sleep(sleep_time)
                 
                 file_to_enrich = target / finding.file_path
                 try:
-                    client.enrich_finding(finding, file_to_enrich)
-                    
-                    # Check if finding got an error
-                    reasoning = getattr(finding, "reasoning_chain", "") or ""
-                    is_error = False
-                    for indicator in ["non-zero exit", "not found", "timed out", "unavailable", "returned non-zero", "failed", "error"]:
-                        if indicator in reasoning.lower():
-                            is_error = True
-                            break
-                    if is_error:
-                        consecutive_failures += 1
-                    else:
-                        consecutive_failures = 0
+                    client.enrich_finding(finding, file_to_enrich, raise_on_error=True)
+                    consecutive_failures = 0
                 except Exception as e:
                     consecutive_failures += 1
-                    finding.reasoning_chain = f"ZeroClaw agent enrichment failed: {e}"
+                    # client.enrich_finding already populated finding.reasoning_chain with the error details
                 
     return findings, target
 

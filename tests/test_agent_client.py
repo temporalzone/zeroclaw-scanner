@@ -208,6 +208,34 @@ class TestZeroClawClient:
             client = ZeroClawClient(agent_alias="custom-agent")
         assert client.agent_alias == "custom-agent"
 
+    def test_raise_on_error_binary_not_found(self, sample_finding, sample_file):
+        """Should raise RuntimeError if binary is not found and raise_on_error=True."""
+        with patch("zeroclaw.agent_client._find_zeroclaw_binary", return_value=None):
+            client = ZeroClawClient()
+        import pytest
+        with pytest.raises(RuntimeError, match="ZeroClaw agent binary not found"):
+            client.enrich_finding(sample_finding, sample_file, raise_on_error=True)
+
+    @patch("zeroclaw.agent_client.subprocess.run")
+    def test_raise_on_error_timeout(self, mock_run, sample_finding, sample_file):
+        """Should propagate TimeoutExpired if raise_on_error=True."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="zeroclaw", timeout=60)
+        client = _make_client_with_binary()
+        import pytest
+        with pytest.raises(subprocess.TimeoutExpired):
+            client.enrich_finding(sample_finding, sample_file, raise_on_error=True)
+
+    @patch("zeroclaw.agent_client.subprocess.run")
+    def test_raise_on_error_subprocess_error(self, mock_run, sample_finding, sample_file):
+        """Should propagate CalledProcessError if raise_on_error=True."""
+        mock_run.side_effect = subprocess.CalledProcessError(
+            returncode=1, cmd="zeroclaw", stderr="rate limit exceeded"
+        )
+        client = _make_client_with_binary()
+        import pytest
+        with pytest.raises(subprocess.CalledProcessError):
+            client.enrich_finding(sample_finding, sample_file, raise_on_error=True)
+
 
 class TestExtractJson:
     """Tests for the _extract_json helper."""
