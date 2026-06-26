@@ -707,16 +707,68 @@ def run_scan_backend(target_path_str: str, stream_name: str, enable_enrich: bool
         ]
         
         if enrichable:
-            st.text(f"Enriching {len(enrichable)} findings with ZeroClaw Rust Agent...")
+            # Try to load existing tracker data to reuse already-enriched findings
+            existing_findings = []
+            try:
+                existing_findings = load_tracker()
+            except Exception:
+                pass
+            
+            # Map existing findings by (filename_lower, line_number, title_lower)
+            existing_map = {}
+            for ef in existing_findings:
+                file_key = ef.get("file", "")
+                if file_key:
+                    try:
+                        file_key = Path(file_key).name.lower()
+                    except Exception:
+                        file_key = str(file_key).lower()
+                
+                key = (file_key, ef.get("line"), ef.get("title", "").strip().lower())
+                existing_map[key] = ef
+            
+            progress_status = st.empty()
+            progress_bar = st.progress(0)
+            
             client = ZeroClawClient()
             import time
             consecutive_failures = 0
             for i, finding in enumerate(enrichable, 1):
+                # Extract filename for key matching
+                file_key = ""
+                if finding.file_path:
+                    try:
+                        file_key = Path(finding.file_path).name.lower()
+                    except Exception:
+                        file_key = str(finding.file_path).lower()
+                
+                key = (file_key, finding.line_number, finding.title.strip().lower())
+                matched = existing_map.get(key)
+                
+                # If we have a successful previous run for this finding, reuse it to avoid API delays
+                if matched and matched.get("reasoning_chain") and not any(
+                    ind in matched.get("reasoning_chain", "").lower()
+                    for ind in ["skipped due to", "timed out", "failed", "unavailable", "not found"]
+                ):
+                    finding.reasoning_chain = matched["reasoning_chain"]
+                    finding.fixed_code = matched.get("fixed_code")
+                    progress_status.markdown(
+                        f"⚡ **Reused AI reasoning** for `{finding.id or f'ZC-{i:03d}'}` (*{finding.title}*)"
+                    )
+                    progress_bar.progress(i / len(enrichable))
+                    continue
+                
                 if consecutive_failures >= 5:
                     finding.reasoning_chain = (
                         "ZeroClaw agent skipped due to consecutive API/timeout errors."
                     )
+                    progress_bar.progress(i / len(enrichable))
                     continue
+                
+                progress_status.markdown(
+                    f"🧬 **Enriching finding {i} of {len(enrichable)}** (`{finding.id or f'ZC-{i:03d}'}` - *{finding.title}*)..."
+                )
+                progress_bar.progress(i / len(enrichable))
                 
                 # Sleep briefly to avoid tight rate-limiting, and longer if we recently failed
                 if i > 1:
@@ -730,6 +782,10 @@ def run_scan_backend(target_path_str: str, stream_name: str, enable_enrich: bool
                 except Exception as e:
                     consecutive_failures += 1
                     # client.enrich_finding already populated finding.reasoning_chain with the error details
+            
+            # Clean up status widgets
+            progress_status.empty()
+            progress_bar.empty()
                 
     return findings, target
 
