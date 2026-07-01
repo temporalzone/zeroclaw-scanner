@@ -516,6 +516,7 @@ def load_all_findings():
             "category": cat,
             "reasoning_chain": f.get("reasoning_chain"),
             "fixed_code": f.get("fixed_code"),
+            "long_description": f.get("description", "—"),
             "remediation_enabled": f.get("remediation_enabled", True)  # Tracks if enrichment was selected
         }
         formatted.append(item)
@@ -1217,11 +1218,103 @@ with tab4:
 
     with col2:
         st.markdown("**Markdown Export** — Export summary report")
-        md_lines = ["# ZeroClaw Security Findings Report\n", f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n",
-                    "| Stream | Severity | ID | Component | Status |\n",
-                    "|--------|----------|----|-----------|--------|\n"]
-        for f in st.session_state.findings:
-            md_lines.append(f"| {f['stream']} | {f['severity']} | {f['id']} | {f['component']} | {f['status']} |\n")
+        
+        target_repo = "Mixed Repositories"
+        if sel_streams:
+            if len(sel_streams) == 1:
+                target_repo = sel_streams[0]
+            else:
+                target_repo = ", ".join(sel_streams)
+        
+        from datetime import datetime, timezone
+        timestamp_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "+00:00")
+        
+        crit_cnt = len([f for f in filtered if f["severity"] == "CRITICAL"])
+        high_cnt = len([f for f in filtered if f["severity"] == "HIGH"])
+        med_cnt = len([f for f in filtered if f["severity"] == "MEDIUM"])
+        low_cnt = len([f for f in filtered if f["severity"] == "LOW"])
+        total_cnt = len(filtered)
+        
+        if crit_cnt + high_cnt > 0:
+            posture = "AT RISK"
+            posture_desc = "High-severity issues must be addressed."
+        elif med_cnt > 0:
+            posture = "NEEDS ATTENTION"
+            posture_desc = "Medium-severity issues should be reviewed."
+        else:
+            posture = "SECURE"
+            posture_desc = "No high or critical severity issues active."
+            
+        md_lines = [
+            "# Security Scan Report\n\n",
+            f"**Target Repository:** `{target_repo}`\n",
+            f"**Scan Timestamp:** {timestamp_str}\n",
+            "**Scanner Tool:** ZeroClaw CLI Scanner\n",
+            "**Environment:** local-dev-env\n\n",
+            "## Executive Summary\n\n",
+            f"**Total Findings: {total_cnt}**\n\n",
+            "| Severity | Count |\n",
+            "|----------|-------|\n",
+            f"| CRITICAL | {crit_cnt} |\n",
+            f"| HIGH     | {high_cnt} |\n",
+            f"| MEDIUM   | {med_cnt} |\n",
+            f"| LOW      | {low_cnt} |\n\n",
+            f"> **Security Posture: {posture}** -- {posture_desc}\n\n",
+            "---\n\n",
+            "## Detailed Findings\n\n"
+        ]
+        
+        from collections import defaultdict
+        grouped = defaultdict(list)
+        for f in filtered:
+            grouped[f["component"]].append(f)
+            
+        global_idx = 1
+        for file_path in sorted(grouped.keys()):
+            md_lines.append(f"### 📄 `{file_path}`\n\n")
+            for f in grouped[file_path]:
+                sev = f["severity"]
+                fid = f["id"]
+                line_str = f" (Line {f['line']})" if f.get('line') else ""
+                
+                md_lines.append(f"#### {global_idx}. [{sev}] {fid}\n\n")
+                md_lines.append(f"**Affected Component:** `{f['component']}{line_str}`\n")
+                md_lines.append(f"**STRIDE Classification:** {f['stride']}\n")
+                md_lines.append(f"**OWASP Alignment:** {f['owasp']}\n\n")
+                
+                md_lines.append("##### Description\n\n")
+                desc = f.get("long_description", "—")
+                if desc == "—" or not desc:
+                    desc = f.get("description", "—")
+                md_lines.append(f"{desc}\n\n")
+                
+                md_lines.append("##### Reasoning Chain\n\n")
+                reasoning = f.get("reasoning_chain") or "No reasoning chain generated."
+                reasoning_lines = [f"> {line}" if line.strip() else ">" for line in reasoning.splitlines()]
+                md_lines.append("\n".join(reasoning_lines) + "\n\n")
+                
+                md_lines.append("##### Remediation\n\n")
+                remed = f.get("steps", "—")
+                md_lines.append(f"{remed}\n\n")
+                
+                fixed = f.get("fixed_code")
+                if fixed:
+                    ext = "python"
+                    fn = f["component"].lower()
+                    if fn.endswith((".js", ".jsx")):
+                        ext = "javascript"
+                    elif fn.endswith((".ts", ".tsx")):
+                        ext = "typescript"
+                    elif fn.endswith((".html", ".htm")):
+                        ext = "html"
+                    md_lines.append(f"```{ext}\n{fixed}\n```\n\n")
+                
+                md_lines.append("---\n\n")
+                global_idx += 1
+                
+        if len(md_lines) > 0 and md_lines[-1] == "---\n\n":
+            md_lines.pop()
+            
         st.download_button("📄 Download Markdown", data="".join(md_lines), file_name="findings_tracker_report.md", mime="text/markdown", use_container_width=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
