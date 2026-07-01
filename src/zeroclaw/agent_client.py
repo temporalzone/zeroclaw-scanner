@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # Maximum seconds to wait for the Rust agent per finding
 _AGENT_TIMEOUT_SECONDS = 60
 
-# Maximum bytes of source code context to send (prevents massive prompts)
-_MAX_CONTEXT_BYTES = 50_000  # ~50 KB
+# Maximum bytes of source code context to send (prevents massive prompts and Windows command-line limits)
+_MAX_CONTEXT_BYTES = 6_000  # ~6 KB
 
 # Default agent alias — must match [agents.<alias>] in ~/.zeroclaw/config.toml
 _DEFAULT_AGENT_ALIAS = "scanner"
@@ -139,8 +139,8 @@ class ZeroClawClient:
                 raise RuntimeError("ZeroClaw agent binary not found.")
             return finding
 
-        # 1. Extract code context (bounded to prevent huge prompts)
-        code_context = self._read_file_context(file_path)
+        # 1. Extract code context (bounded to prevent huge prompts and Windows command line limits)
+        code_context = self._read_file_context(file_path, finding.line_number)
 
         # 2. Build the combined message (system prompt + finding details)
         #    The `zeroclaw agent -m` flag accepts a single message string.
@@ -170,6 +170,7 @@ class ZeroClawClient:
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=True,
                 timeout=_AGENT_TIMEOUT_SECONDS,
             )
@@ -278,12 +279,35 @@ class ZeroClawClient:
         return None
 
     @staticmethod
-    def _read_file_context(file_path: Path) -> str:
-        """Read file content bounded to _MAX_CONTEXT_BYTES."""
+    def _read_file_context(file_path: Path, line_number: int | None = None) -> str:
+        """Read file content bounded to _MAX_CONTEXT_BYTES, centered around line_number if available."""
         try:
-            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            if not file_path.is_file():
+                return "Could not load file context: file not found."
+
+            lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            if not lines:
+                return ""
+
+            if line_number is not None:
+                # 1-based index to 0-based index
+                target_idx = line_number - 1
+                start_idx = max(0, target_idx - 30)
+                end_idx = min(len(lines), target_idx + 31)
+                
+                context_lines = lines[start_idx:end_idx]
+                # Mark target line for clarity in prompt
+                indicator_idx = target_idx - start_idx
+                if 0 <= indicator_idx < len(context_lines):
+                    context_lines[indicator_idx] += "  <-- VULNERABLE LINE"
+                
+                content = "\n".join(context_lines)
+            else:
+                # Fallback: read first 80 lines
+                content = "\n".join(lines[:80])
+
             if len(content) > _MAX_CONTEXT_BYTES:
                 return content[:_MAX_CONTEXT_BYTES] + "\n... [truncated]"
             return content
-        except Exception:
-            return "Could not load file context."
+        except Exception as e:
+            return f"Could not load file context: {e}"
